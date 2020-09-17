@@ -25,9 +25,13 @@ class Checkpoint():
         if not os.path.exists(self.path):
             os.mkdir(self.path)
 
+        
+            
         epoch = kwargs['epoch'] if 'epoch' in kwargs else '0'
-        model_path = "-".join([model.model_name,str(epoch)])
-
+        model_path = "_".join([model.model_name,str(epoch)])
+        if 'interrupted' in kwargs:
+            model_path +='_interrupted'
+            
         weights = {
             'model': model.model.state_dict(),
             'optimizer': model.optimizer.state_dict(),

@@ -1,82 +1,67 @@
 from utils.getter import *
-from models.detection.efficientdet.detector import EfficientDetector
-from models.detection.efficientdet.model import FocalLoss
-train_transforms = Compose([
-    RandomHorizontalFlip(),
-    RandomCrop(),
-    Rotation(20),
-    Resize((512,512)),
-    ToTensor(),
-    Normalize(box_transform = False),
+from datasets.udacity_dataset import UdacityDataset
+from models.regressor import Regressor
+from losses.mseloss import MSELoss
+import torchvision.transforms as tf
+import os 
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import torch.utils.data as data
+import torch
+import torch.nn as nn
+
+train_transforms = tf.Compose([
+    tf.RandomAffine(0, translate=(0,0.2)),
+    tf.ColorJitter(brightness=0.5, contrast=0.5, saturation=0, hue=0),
+    tf.ToTensor(),
+    tf.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-val_transforms = Compose([
-    Resize((512,512)),
-    ToTensor(),
-    Normalize(),
+val_transforms = tf.Compose([
+    tf.ToTensor(),
+    tf.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 if __name__ == "__main__":
-    dataset_path = "datasets/datasets/VOC/"
-    img_path = dataset_path + "images"
-    ann_path = {
-        "train": dataset_path + "annotations/pascal_train2012.json",
-        "val": dataset_path + "annotations/pascal_val2012.json"}
-   
-    trainset = ObjectDetectionDataset(img_dir=img_path, ann_path = ann_path['train'],transforms= train_transforms)
-    valset = ObjectDetectionDataset(img_dir=img_path, ann_path = ann_path['val'], transforms=val_transforms)
-    print(trainset)
-    print(valset)
-
-    trainset.mode='xyxy'
-    valset.mode='xyxy'
-    
-    NUM_CLASSES = len(trainset.classes)
     device = torch.device("cuda")
     print("Using", device)
 
+    root = 'datasets/udacity'
+    csv_file = os.path.join(root, 'driving_log.csv')
+    img_folder = os.path.join(root, 'IMG')
+
+    table = pd.read_csv(csv_file)
+    traindata, valdata = train_test_split(table, train_size=0.8, random_state=2020)
+    
     # Dataloader
-    BATCH_SIZE = 1
-    my_collate = trainset.collate_fn
-    trainloader = data.DataLoader(trainset, batch_size=BATCH_SIZE, collate_fn=my_collate, shuffle=True)
-    valloader = data.DataLoader(valset, batch_size=BATCH_SIZE, collate_fn=my_collate, shuffle=False)
+    trainset = UdacityDataset(img_folder, traindata, transforms=train_transforms)
+    valset = UdacityDataset(img_folder, valdata, transforms=val_transforms)
+    trainloader = data.DataLoader(trainset, batch_size=16,collate_fn=trainset.collate_fn)
+    valloader = data.DataLoader(valset, batch_size=16, collate_fn=trainset.collate_fn)
+    print(trainset)
+    print(valset)
     
-    criterion = FocalLoss
+
+    NUM_CLASSES = 1
+    criterion = MSELoss()
     optimizer = torch.optim.Adam
-    #metrics = [AccuracyMetric(decimals=3)]
     
-    model = EfficientDetector(
+    model = Regressor(
                     n_classes = NUM_CLASSES,
                     optim_params = {'lr': 1e-3},
                     criterion= criterion, 
                     optimizer= optimizer,
-                    freeze=True,
-                    pretrained='weights/pretrained/efficientdet-d0-fixed.pth',
-                    #metrics=  metrics,
                     device = device)
     
-    #load_checkpoint(model, "weights/ssd-voc/SSD300-10.pth")
-    #model.unfreeze()
     trainer = Trainer(model,
                      trainloader, 
                      valloader,
-#                     clip_grad = 1.0,
-                     checkpoint = Checkpoint(save_per_epoch=5, path = 'weights/effdet'),
-                     logger = Logger(log_dir='loggers/runs/effdet'),
-                     scheduler = StepLR(model.optimizer, step_size=30, gamma=0.1),
+                     checkpoint = Checkpoint(save_per_epoch=5, path = 'weights/udacity'),
+                     logger = Logger(log_dir='loggers/runs/udacity'),
+                     scheduler = StepLR(model.optimizer, step_size=25, gamma=0.1),
                      evaluate_per_epoch = 2)
     
     print(trainer)
     
-    
-    
-    trainer.fit(num_epochs=50, print_per_iter=10)
-    
+    trainer.fit(num_epochs=30, print_per_iter=10)
 
-    # Inference
-    """imgs, results = trainer.inference_batch(valloader)
-    idx = 0
-    img = imgs[idx]
-    boxes = results[idx]['rois']
-    labels = results[idx]['class_ids']
-    trainset.visualize(img,boxes,labels)"""

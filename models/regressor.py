@@ -7,11 +7,11 @@ from torchvision import transforms
 
 
 
-class Classifier(BaseModel):
+class Regressor(BaseModel):
     def __init__(self, n_classes, **kwargs):
-        super(Classifier, self).__init__(**kwargs)
-        self.model = models.resnet101(pretrained = True)
-        self.model_name = "ResNet101"
+        super(Regressor, self).__init__(**kwargs)
+        self.model = models.resnet34(pretrained = True)
+        self.model_name = "ResNet34"
         self.optimizer = self.optimizer(self.parameters(), lr= self.lr)
         self.set_optimizer_params()
         self.n_classes = n_classes
@@ -26,7 +26,6 @@ class Classifier(BaseModel):
             self.model.to(self.device)
             self.criterion.to(self.device)
     
-
     def forward(self, x):
         return self.model(x)
 
@@ -74,6 +73,23 @@ class Classifier(BaseModel):
             outputs = self(inputs)
         return outputs
 
+    def inference_img(self, img):
+        # Processed img (1x3xWxH)
+        self.model.eval()
+        with torch.no_grad():
+            if img.shape[0] != 1:
+                img = img.unsqueeze(0)
+
+            if self.device:
+                img = img.to(self.device)
+
+            # Output shape (1x1)
+            outputs = self(img)
+
+            if self.device:
+                preds = outputs.cpu()
+
+        return preds.squeeze(0).numpy()
     
 
     
