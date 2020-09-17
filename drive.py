@@ -10,6 +10,7 @@ import eventlet.wsgi
 from PIL import Image
 from flask import Flask
 from io import BytesIO
+import cv2
 
 import torch
 import torchvision.transforms as tf
@@ -64,18 +65,13 @@ def telemetry(sid, data):
                 speed_limit = MAX_SPEED
             throttle = 1.0 #- steering_angle**2 - (speed/speed_limit)**2
 
-            print('{} {} {}'.format(steering_angle, throttle, speed))
+            print('{:10.4f} {:10.4f} {:10.4f}'.format(steering_angle, throttle, speed))
 			
 			# Gửi lại dữ liệu về góc lái, tốc độ cho phần mềm để ô tô tự lái
             send_control(steering_angle, throttle)
         except Exception as e:
             print(e)
 
-        # save frame
-        if args.image_folder != '':
-            timestamp = datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')[:-3]
-            image_filename = os.path.join(args.image_folder, timestamp)
-            image.save('{}.jpg'.format(image_filename))
     else:
         
         sio.emit('manual', data={}, skip_sid=True)
@@ -105,38 +101,24 @@ if __name__ == '__main__':
         type=str,
         help='Path to model h5 file. Model should be on the same path.'
     )
-    parser.add_argument(
-        '--image_folder',
-        type=str,
-        nargs='?',
-        default='',
-        help='Path to image folder. This is where the images from the run will be saved.'
-    )
+
     args = parser.parse_args()
 
-    # Load model mà ta đã train được từ bước trước
-    device = torch.device("cuda")
+    # Dùng GPU/CPU
+    device = torch.device("cuda" if torch.cuda.is_available() else 'cpu') 
     print("Using", device)
-    criterion = MSELoss()
-    optimizer = torch.optim.Adam
+
+    # Load model mà ta đã train được từ bước trước
+    
     model = Regressor(
                     n_classes = 1,
                     optim_params = {'lr': 1e-3},
-                    criterion= criterion, 
-                    optimizer= optimizer,
+                    criterion= MSELoss(), 
+                    optimizer= torch.optim.Adam,
                     device = device)
-    load_checkpoint(model, 'weights/udacity/ResNet34_30.pth')
-
-    if args.image_folder != '':
-        print("Creating image folder at {}".format(args.image_folder))
-        if not os.path.exists(args.image_folder):
-            os.makedirs(args.image_folder)
-        else:
-            shutil.rmtree(args.image_folder)
-            os.makedirs(args.image_folder)
-        print("RECORDING THIS RUN ...")
-    else:
-        print("NOT RECORDING THIS RUN ...")
+    
+    if args.model is not None:
+        load_checkpoint(model, args.model)
 
     # wrap Flask application with engineio's middleware
     app = socketio.Middleware(sio, app)
